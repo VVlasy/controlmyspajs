@@ -1,4 +1,12 @@
+
+<p align="center">
+<img src="https://gitlab.com/VVlasy/controlmyspajs/-/raw/001917116dd56dfbe79ee8aea1665f7ff0682ecd/graphics/logo-transparent.png" width="150">
+</p>
+
+<span align="center">
+
 # ControlMySpaJs
+</span>
 
 A library to facilitate connection to ControlMySpa API by Balboa
 
