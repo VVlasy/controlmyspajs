@@ -1,6 +1,6 @@
 {
   "name": "controlmyspajs",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Library for ControlMySpa API access",
   "main": "controlmyspa.js",
   "scripts": {
@@ -21,5 +21,6 @@
   "engines": {
     "node": ">=13.11.0"
   },
-  "homepage": "https://gitlab.com/VVlasy/controlmyspajs#readme"
+  "homepage": "https://gitlab.com/VVlasy/controlmyspajs#readme",
+  "keywords": ["balboa", "controlmyspa", "api", "control", "my", "spa"]
 }
