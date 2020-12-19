@@ -1,0 +1,25 @@
+{
+  "name": "controlmyspajs",
+  "version": "0.1.0",
+  "description": "Library for ControlMySpa API access",
+  "main": "controlmyspa.js",
+  "scripts": {
+    "test": "mocha --reporter spec"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitlab.com/VVlasy/controlmyspajs.git"
+  },
+  "author": "Victor Vlasák",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://gitlab.com/VVlasy/controlmyspajs/issues"
+  },
+  "dependencies": {
+    "axios": "^0.21.0"
+  },
+  "engines": {
+    "node": ">=13.11.0"
+  },
+  "homepage": "https://gitlab.com/VVlasy/controlmyspajs#readme"
+}
