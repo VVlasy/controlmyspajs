@@ -1,10 +1,14 @@
 {
   "name": "controlmyspajs",
-  "version": "0.1.5",
+  "version": "0.1.11",
   "description": "Library for ControlMySpa API access",
   "main": "controlmyspa.js",
   "scripts": {
-    "test": "mocha --reporter spec"
+    "build": "",
+    "lint": "eslint --fix ./",
+    "vuln-test": "npm-check",
+    "test": "mocha --reporter spec",
+    "postversion": "git push --follow-tags"
   },
   "repository": {
     "type": "git",
@@ -22,6 +26,26 @@
     "node": ">=13.11.0"
   },
   "homepage": "https://gitlab.com/VVlasy/controlmyspajs#readme",
-  "keywords": ["balboa", "controlmyspa", "api", "control", "my", "spa"],
-  "files": ["index.js", "controlmyspa.js"]
+  "keywords": [
+    "balboa",
+    "controlmyspa",
+    "api",
+    "control",
+    "my",
+    "spa"
+  ],
+  "files": [
+    "index.js",
+    "controlmyspa.js"
+  ],
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "eslint": "^7.16.0",
+    "eslint-config-standard": "^16.0.2",
+    "eslint-plugin-import": "^2.22.1",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^4.2.1",
+    "mocha": "^8.2.1",
+    "npm-check": "^5.9.2"
+  }
 }

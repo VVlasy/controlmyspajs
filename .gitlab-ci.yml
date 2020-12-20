@@ -1,0 +1,36 @@
+image: node:14
+
+stages:
+  - test
+  - deploy
+
+before_script:
+  - npm install
+
+cache:
+  paths:
+    - node_modules/
+
+test:lint:
+  script:
+    - npm run lint
+
+test:node:
+  script:
+    - npm run build
+    - npm test
+
+test:vulnerabilities:
+  script:
+    - npm run vuln-test
+
+
+publish:
+  stage: deploy
+  only:
+    - tags
+    - triggers
+  script:
+    - npm run build
+    - npm config set '//registry.npmjs.org/:_authToken' "$NPM_TOKEN"
+    - npm publish
