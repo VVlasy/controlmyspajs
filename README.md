@@ -13,7 +13,7 @@ A library to facilitate connection to ControlMySpa API by Balboa
 ### Examples:
 
 ```js
-const ControlMySpa = require('./controlmyspa');
+const ControlMySpa = require('controlmyspa');
 
 
 let spa = new ControlMySpa("email@mail.mail", "password"); // uses celsius
@@ -23,7 +23,7 @@ spa.init().then((result) => {
     if (result) {
         console.log("Spa init success.");
         spa.waitForResult = true;
-        console.log(JSON.stringify(spa.currentSpa));
+        console.log((spa.currentSpa);
 
 
         // available function calls
