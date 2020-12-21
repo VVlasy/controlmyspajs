@@ -45,3 +45,14 @@ spa.init().then((result) => {
     };
 });
 ```
+
+### Supported features
+    - get spa status
+    - set temperature
+    - set temperature range
+    - toggle heater mode
+    - lock/unlock panel
+    - Control Jets, Blowers and Lights
+    - set filter cycle intervals
+
+* additional feature support can be added, I added all features my spa supported, although for me to add features from your spa I will need login credentials to sniff the API calls. Or you can sniff them yourself and send me the logs
