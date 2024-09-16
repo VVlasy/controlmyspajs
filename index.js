@@ -16,6 +16,7 @@ spa.init().then(result => {
     spa.setTemp(38.5);
     spa.setTempRangeHigh();
     spa.setTempRangeLow();
+    spa.setTime("24/01/2024/", "23:11", true) // true for 24H time format, false for 12 hour clock, default true
     spa.lockPanel();
     spa.unlockPanel();
     spa.setJetState(0, 'OFF'); // "OFF"/"HIGH"
