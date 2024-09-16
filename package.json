@@ -10,14 +10,11 @@
     "test": "mocha --reporter spec",
     "postversion": "git push --follow-tags"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://gitlab.com/VVlasy/controlmyspajs.git"
-  },
+  "repository": "https://github.com/VVlasy/controlmyspajs",
   "author": "Victor Vlasák",
   "license": "MIT",
   "bugs": {
-    "url": "https://gitlab.com/VVlasy/controlmyspajs/issues"
+    "url": "https://github.com/VVlasy/controlmyspajs/issues"
   },
   "dependencies": {
     "axios": "^0.21.0"
@@ -25,7 +22,7 @@
   "engines": {
     "node": ">=13.11.0"
   },
-  "homepage": "https://gitlab.com/VVlasy/controlmyspajs#readme",
+  "homepage": "https://github.com/VVlasy/controlmyspajs#readme",
   "keywords": [
     "balboa",
     "controlmyspa",
