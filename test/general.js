@@ -4,12 +4,12 @@ const ControlMySpa = require('../controlmyspa');
 
 describe('ControlMySpa', function () {
   describe('Connection to server', function () {
-    it('connects using invalid credentials', function () {
+    it('connects using invalid credentials', async function () {
       const spa = new ControlMySpa('hmmm@asjdasd.gxl', 'password');
 
-      spa.init().then((result) => {
-        expect(result).to.greaterThan(0);
-      });
+        let res = await spa.init();
+
+        expect(res).to.be.equal(false);
     });
   });
 });
