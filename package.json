@@ -1,6 +1,6 @@
 {
   "name": "controlmyspajs",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Library for ControlMySpa API access",
   "main": "controlmyspa.js",
   "scripts": {
