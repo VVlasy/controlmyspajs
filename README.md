@@ -10,6 +10,11 @@
 
 A library to facilitate connection to ControlMySpa API by Balboa
 
+### Installation
+```
+npm i controlmyspajs
+```
+
 ### Examples:
 
 ```js
