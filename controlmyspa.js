@@ -1,8 +1,9 @@
-const querystring = require('querystring');
-const axios = require('axios').default;
+const querystring = require("querystring");
+const axios = require("axios").default;
+const https = require("https");
 
 class ControlMySpa {
-  constructor (email, password, celsius = true) {
+  constructor(email, password, celsius = true) {
     this.celsius = celsius;
     this.email = email;
     this.password = password;
@@ -28,9 +29,22 @@ class ControlMySpa {
 
     this.scheduleFilterIntervalEnum = null;
     this.createFilterScheduleIntervals();
+
+    this.instance = axios.create({
+      httpsAgent: new https.Agent({
+        rejectUnauthorized: false,
+      }),
+    });
   }
 
-  async init () {
+  isLoggedIn() {
+    return !!this.tokenData.access_token &&
+      this.tokenData.timestamp + this.tokenData.expires_in * 1000 > Date.now()
+      ? true
+      : false;
+  }
+
+  async init() {
     return (
       (await this.idm()) &&
       (await this.login()) &&
@@ -39,630 +53,736 @@ class ControlMySpa {
     );
   }
 
-  async idm () {
-    const req = await axios.get(
-      'https://iot.controlmyspa.com/idm/tokenEndpoint',
-      {
-        headers: {
-          Accept: '*/*',
-          'User-Agent':
-            'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-          'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-          'Accept-Language': 'cs-CZ;q=1.0'
-        }
-      }
-    );
-
-    if (req.status === 200) {
-      const body = req.data;
-
-      this.mobileClientId = body.mobileClientId;
-      this.mobileClientSecret = body.mobileClientSecret;
-      this.tokenEndpoint = body._links.tokenEndpoint.href;
-      this.refreshEndpoint = body._links.refreshEndpoint.href;
-      this.whoami = body._links.whoami.href;
-    } else {
-      // error getting idm
-      console.error('Error getting IDM info');
-    }
-
-    return req.status === 200;
-  }
-
-  async login () {
-    const form = {
-      grant_type: 'password',
-      password: this.password,
-      scope: 'openid user_name',
-      username: this.email
-    };
-
-    const formData = querystring.stringify(form);
-    const contentLength = formData.length;
-
-    const req = await axios.post(this.tokenEndpoint, formData, {
-      headers: {
-        Accept: '*/*',
-        'User-Agent':
-          'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-        'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-        'Accept-Language': 'cs-CZ;q=1.0',
-        'Content-Length': contentLength,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization:
-          'Basic ' +
-          Buffer.from(
-            this.mobileClientId + ':' + this.mobileClientSecret
-          ).toString('base64')
-      }
-    });
-
-    if (req.status === 200) {
-      const body = req.data;
-      this.tokenData = body;
-    } else {
-      // error getting idm
-      console.error('failed to login');
-    }
-
-    return req.status === 200;
-  }
-
-  async getWhoAmI () {
-    const req = await axios.get(this.whoami, {
-      headers: {
-        Accept: '*/*',
-        'User-Agent':
-          'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-        'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-        'Accept-Language': 'cs-CZ;q=1.0',
-        Authorization: 'Bearer ' + this.tokenData.access_token
-      }
-    });
-
-    if (req.status === 200) {
-      const body = req.data;
-      this.userInfo = body;
-
-      return this.userInfo;
-    } else {
-      // error getting idm
-      console.error('failed to get WhoAmI');
-    }
-
-    return false;
-  }
-
-  async getSpa () {
-    const req = await axios.get(
-      'https://iot.controlmyspa.com/mobile/spas/search/findByUsername?username=' +
-      this.email,
-      {
-        headers: {
-          Accept: '*/*',
-          'User-Agent':
-            'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-          'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-          'Accept-Language': 'cs-CZ;q=1.0',
-          Authorization: 'Bearer ' + this.tokenData.access_token
-        }
-      }
-    );
-
-    if (req.status === 200) {
-      const body = req.data;
-
-      this.currentSpa = body;
-
-      if (this.celsius) {
-        this.currentSpa.currentState.desiredTemp = (
-          (parseFloat(this.currentSpa.currentState.desiredTemp) - 32) *
-          (5 / 9)
-        ).toFixed(1);
-        this.currentSpa.currentState.targetDesiredTemp = (
-          (parseFloat(this.currentSpa.currentState.targetDesiredTemp) - 32) *
-          (5 / 9)
-        ).toFixed(1);
-        this.currentSpa.currentState.currentTemp = (
-          (parseFloat(this.currentSpa.currentState.currentTemp) - 32) *
-          (5 / 9)
-        ).toFixed(1);
-      }
-
-      return this.currentSpa;
-    } else {
-      // error getting idm
-      console.error('failed to get spa data');
-    }
-
-    return false;
-  }
-
-  async setTemp (temp) {
-    let toSet = temp;
-    if (this.celsius) {
-      toSet = ((temp / 5) * 9 + 32).toFixed(1);
-    }
-
-    const tempData = {
-      desiredTemp: toSet.toString()
-    };
-
-    const req = await axios.post(
-      'https://iot.controlmyspa.com/mobile/control/' +
-      this.currentSpa._id +
-      '/setDesiredTemp',
-      tempData,
-      {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent':
-            'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-          'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-          'Accept-Language': 'cs-CZ;q=1.0',
-          'Content-Length': JSON.stringify(tempData).length,
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + this.tokenData.access_token
-        }
-      }
-    );
-
-    if (req.status === 202) {
-      const body = req.data;
-      console.log(
-        this.currentSpa.currentState.desiredTemp +
-        (this.celsius ? ' C' : ' F') +
-        ' => ' +
-        temp +
-        (this.celsius ? ' C' : ' F')
+  async idm() {
+    try {
+      const req = await this.instance.get(
+        "https://iot.controlmyspa.com/idm/tokenEndpoint"
       );
 
-      this.currentSpa.currentState.desiredTemp = body.values.DESIREDTEMP;
-      if (this.celsius) {
-        this.currentSpa.currentState.desiredTemp = (
-          (parseFloat(body.values.DESIREDTEMP) - 32) *
-          (5 / 9)
-        ).toFixed(1);
-      }
-    } else {
-      // error getting idm
-      console.error('failed to set temp');
-    }
+      if (req.status === 200) {
+        const body = req.data;
 
-    return req.status === 200;
+        this.mobileClientId = body.mobileClientId;
+        this.mobileClientSecret = body.mobileClientSecret;
+        this.tokenEndpoint = body._links.tokenEndpoint.href;
+        this.refreshEndpoint = body._links.refreshEndpoint.href;
+        this.whoami = body._links.whoami.href;
+      } else {
+        // error getting idm
+        console.error("Error getting IDM info");
+      }
+
+      return req.status === 200;
+    } catch (error) {
+      console.error(error);
+    }
   }
 
-  async setTempRangeHigh () {
+  async login() {
+    try {
+      const form = {
+        password: this.password,
+        username: this.email,
+      };
+
+      const formData = querystring.stringify(form);
+      const contentLength = formData.length;
+
+      const req = await this.instance.post(this.tokenEndpoint, formData, {
+        headers: {
+          "Content-Length": contentLength,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${Buffer.from(
+            this.mobileClientId + ":" + this.mobileClientSecret
+          ).toString("base64")}`,
+        },
+      });
+
+      const requestValid = req.status >= 200 && req.status < 400;
+
+      if (requestValid) {
+        const body = req.data;
+        this.tokenData = { ...body, expires_in: 900, timestamp: Date.now() };
+        console.log("login success");
+      } else {
+        // error getting idm
+        console.error("failed to login");
+      }
+
+      return requestValid;
+    } catch (error) {
+      console.error(error);
+      return false;
+    }
+  }
+
+  async getWhoAmI() {
+    try {
+      const req = await this.instance.get(this.whoami, {
+        headers: {
+          Authorization: "Bearer " + this.tokenData.access_token,
+        },
+      });
+
+      if (req.status === 200) {
+        const body = req.data;
+        this.userInfo = body;
+
+        this.spaId = this.userInfo.spaId;
+
+        return this.userInfo;
+      } else {
+        // error getting idm
+        console.error("failed to get WhoAmI");
+      }
+
+      return false;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async getSpa() {
+    try {
+      if (!this.isLoggedIn()) {
+        await this.login();
+      }
+
+      const req = await this.instance.get(`https://iot.controlmyspa.com/spas`, {
+        headers: {
+          Authorization: "Bearer " + this.tokenData.access_token,
+        },
+        params: {
+          page: 0,
+          pageSize: 20,
+        },
+      });
+
+      const requestValid = req.status >= 200 && req.status < 400;
+
+      if (requestValid) {
+        const body = req.data;
+
+        const spa =
+          body._embedded &&
+          body._embedded.spas &&
+          body._embedded.spas.length > 0
+            ? body._embedded.spas[0]
+            : {};
+
+        this.currentSpa = spa;
+
+        return this.currentSpa;
+      } else {
+        // error getting idm
+        console.error("failed to get spa data");
+      }
+
+      return false;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  /**
+   * @description Call the CMS API to set time and 24h clock format
+   *
+   * @param {String} date in mm/dd/yyyy format
+   * @param {String} time in HH:mm format
+   * @param {Boolean} military_format true for 24h, false for 12h clock
+   */
+  async setTime(date, time, military_format = true) {
+    // Escape slashes in date before sending to api
+    try {
+      if (!this.isLoggedIn()) {
+        await this.login();
+      }
+
+      const timeData = {
+        date: date.replace(/\//g, "\\/"),
+        time: time,
+        military_format: military_format ? "TRUE" : "FALSE",
+      };
+
+      const req = await this.instance.post(
+        "https://iot.controlmyspa.com/mobile/control/" +
+          this.currentSpa._id +
+          "/setTime",
+        timeData,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent":
+              "ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2",
+            "Accept-Encoding": "br;q=1.0, gzip;q=0.9, deflate;q=0.8",
+            "Accept-Language": "cs-CZ;q=1.0",
+            "Content-Length": JSON.stringify(timeData).length,
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + this.tokenData.access_token,
+          },
+        }
+      );
+
+      const requestValid = req.status >= 200 && req.status < 400;
+
+      if (requestValid) {
+        const body = req.data;
+      } else {
+        // error getting idm
+        console.error("failed to set time");
+      }
+
+      return requestValid;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async setTemp(temp) {
+    try {
+      if (!this.isLoggedIn()) {
+        await this.login();
+      }
+
+      const tempData = {
+        desiredTemp: temp.toFixed(1),
+      };
+
+      const req = await this.instance.post(
+        "https://iot.controlmyspa.com/mobile/control/" +
+          this.currentSpa._id +
+          "/setDesiredTemp",
+        tempData,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent":
+              "ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2",
+            "Accept-Encoding": "br;q=1.0, gzip;q=0.9, deflate;q=0.8",
+            "Accept-Language": "cs-CZ;q=1.0",
+            "Content-Length": JSON.stringify(tempData).length,
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + this.tokenData.access_token,
+          },
+        }
+      );
+
+      const requestValid = req.status >= 200 && req.status < 400;
+
+      if (requestValid) {
+        const body = req.data;
+      } else {
+        // error getting idm
+        console.error("failed to set temp");
+      }
+
+      return requestValid;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async setTempRangeHigh() {
     return await this.setTempRange(true);
   }
 
-  async setTempRangeLow () {
+  async setTempRangeLow() {
     return await this.setTempRange(false);
   }
 
-  sleep (ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async setTempRange (high) {
-    const tempData = {
-      desiredState: high ? 'HIGH' : 'LOW'
-    };
+  async setTempRange(high) {
+    try {
+      if (!this.isLoggedIn()) {
+        await this.login();
+      }
 
-    const req = await axios.post(
-      'https://iot.controlmyspa.com/mobile/control/' +
-      this.currentSpa._id +
-      '/setTempRange',
-      tempData,
-      {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent':
-            'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-          'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-          'Accept-Language': 'cs-CZ;q=1.0',
-          'Content-Length': JSON.stringify(tempData).length,
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + this.tokenData.access_token
+      const tempData = {
+        desiredState: high ? "HIGH" : "LOW",
+      };
+
+      const req = await this.instance.post(
+        "https://iot.controlmyspa.com/mobile/control/" +
+          this.currentSpa._id +
+          "/setTempRange",
+        tempData,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent":
+              "ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2",
+            "Accept-Encoding": "br;q=1.0, gzip;q=0.9, deflate;q=0.8",
+            "Accept-Language": "cs-CZ;q=1.0",
+            "Content-Length": JSON.stringify(tempData).length,
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + this.tokenData.access_token,
+          },
         }
-      }
-    );
+      );
 
-    if (req.status === 202) {
-      const oldTemp = this.currentSpa.currentState.desiredTemp;
+      const requestValid = req.status >= 200 && req.status < 400;
 
-      if (this.waitForResult) {
-        await this.sleep(5000);
-        const newSpaData = await this.getSpa();
+      if (requestValid) {
+        if (this.waitForResult) {
+          await this.sleep(5000);
+          const newSpaData = await this.getSpa();
 
-        console.log(
-          oldTemp +
-          (this.celsius ? ' C' : ' F') +
-          ' => ' +
-          newSpaData.currentState.desiredTemp +
-          (this.celsius ? ' C' : ' F')
-        );
+          return newSpaData;
+        }
 
-        return newSpaData;
+        return true;
+      } else {
+        // error getting idm
+        console.error("failed to set temp range");
       }
 
-      return true;
-    } else {
-      // error getting idm
-      console.error('failed to set temp');
+      return false;
+    } catch (error) {
+      console.error(error);
     }
-
-    return false;
   }
 
-  async lockPanel () {
+  async lockPanel() {
     return await this.setPanelLock(true);
   }
 
-  async unlockPanel () {
+  async unlockPanel() {
     return await this.setPanelLock(false);
   }
 
-  async setPanelLock (locked) {
-    const panelData = {
-      desiredState: locked ? 'LOCK_PANEL' : 'UNLOCK_PANEL'
-    };
-
-    const req = await axios.post(
-      'https://iot.controlmyspa.com/mobile/control/' +
-      this.currentSpa._id +
-      '/setPanel',
-      panelData,
-      {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent':
-            'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-          'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-          'Accept-Language': 'cs-CZ;q=1.0',
-          'Content-Length': JSON.stringify(panelData).length,
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + this.tokenData.access_token
-        }
+  async setPanelLock(locked) {
+    try {
+      if (!this.isLoggedIn()) {
+        await this.login();
       }
-    );
 
-    if (req.status === 202) {
-      const oldState = this.currentSpa.currentState.panelLock;
+      const panelData = {
+        desiredState: locked ? "LOCK_PANEL" : "UNLOCK_PANEL",
+      };
 
-      if (this.waitForResult) {
-        await this.sleep(5000);
-        const newSpaData = await this.getSpa();
+      const req = await this.instance.post(
+        "https://iot.controlmyspa.com/mobile/control/" +
+          this.currentSpa._id +
+          "/setPanel",
+        panelData,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent":
+              "ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2",
+            "Accept-Encoding": "br;q=1.0, gzip;q=0.9, deflate;q=0.8",
+            "Accept-Language": "cs-CZ;q=1.0",
+            "Content-Length": JSON.stringify(panelData).length,
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + this.tokenData.access_token,
+          },
+        }
+      );
 
-        console.log(
-          (oldState ? 'LOCKED' : 'UNLOCKED') +
-          ' => ' +
-          (newSpaData.currentState.panelLock ? 'LOCKED' : 'UNLOCKED')
+      const requestValid = req.status >= 200 && req.status < 400;
+
+      if (requestValid) {
+        const oldState = this.currentSpa.currentState.panelLock;
+
+        if (this.waitForResult) {
+          await this.sleep(5000);
+          const newSpaData = await this.getSpa();
+
+          console.log(
+            (oldState ? "LOCKED" : "UNLOCKED") +
+              " => " +
+              (newSpaData.currentState.panelLock ? "LOCKED" : "UNLOCKED")
+          );
+
+          return newSpaData;
+        }
+
+        return true;
+      } else {
+        // error getting idm
+        console.error("failed to set panel lock");
+      }
+
+      return false;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async setJetState(deviceNumber, desiredState) {
+    try {
+      if (!this.isLoggedIn()) {
+        await this.login();
+      }
+
+      // numbers 0,1,2  || states: HIGH , OFF
+      if (desiredState !== "OFF" && desiredState !== "HIGH") {
+        console.error("Invalid value for desired state");
+
+        return false;
+      }
+
+      console.log(deviceNumber, desiredState);
+
+      const jetState = {
+        deviceNumber: deviceNumber.toString(),
+        desiredState: desiredState,
+        originatorId: "optional-Jet",
+      };
+
+      const req = await this.instance.post(
+        "https://iot.controlmyspa.com/mobile/control/" +
+          this.currentSpa._id +
+          "/setJetState",
+        jetState,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent":
+              "ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2",
+            "Accept-Encoding": "br;q=1.0, gzip;q=0.9, deflate;q=0.8",
+            "Accept-Language": "cs-CZ;q=1.0",
+            "Content-Length": JSON.stringify(jetState).length,
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + this.tokenData.access_token,
+          },
+        }
+      );
+
+      const requestValid = req.status >= 200 && req.status < 400;
+
+      if (requestValid) {
+        const oldState = this.currentSpa.currentState.components.find(
+          (el, id) => {
+            return (
+              el.componentType === "PUMP" && el.port === deviceNumber.toString()
+            );
+          }
         );
 
-        return newSpaData;
+        if (this.waitForResult) {
+          await this.sleep(5000);
+          const newSpaData = await this.getSpa();
+
+          const newState = newSpaData.currentState.components.find((el, id) => {
+            return (
+              el.componentType === "PUMP" && el.port === deviceNumber.toString()
+            );
+          });
+
+          console.log(oldState.value + " => " + newState.value);
+
+          return newSpaData;
+        }
+
+        return true;
+      } else {
+        // error getting idm
+        console.error("failed to set jet state");
       }
-
-      return true;
-    } else {
-      // error getting idm
-      console.error('failed to set panel lock');
-    }
-
-    return false;
-  }
-
-  async setJetState (deviceNumber, desiredState) {
-    // numbers 0,1,2  || states: HIGH , OFF
-    if (desiredState !== 'OFF' && desiredState !== 'HIGH') {
-      console.error('Invalid value for desired state');
 
       return false;
+    } catch (error) {
+      console.error(error);
     }
+  }
 
-    const jetState = {
-      deviceNumber: deviceNumber.toString(),
-      desiredState: desiredState,
-      originatorId: 'optional-Jet'
-    };
-
-    const req = await axios.post(
-      'https://iot.controlmyspa.com/mobile/control/' +
-      this.currentSpa._id +
-      '/setJetState',
-      jetState,
-      {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent':
-            'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-          'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-          'Accept-Language': 'cs-CZ;q=1.0',
-          'Content-Length': JSON.stringify(jetState).length,
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + this.tokenData.access_token
-        }
+  async setBlowerState(deviceNumber, desiredState) {
+    try {
+      if (!this.isLoggedIn()) {
+        await this.login();
       }
-    );
 
-    if (req.status === 202) {
-      const oldState = this.currentSpa.currentState.components.find(
-        (el, id) => {
-          return (
-            el.componentType === 'PUMP' && el.port === deviceNumber.toString()
-          );
+      // numbers 0,1,2  || states: HIGH , OFF
+      if (desiredState !== "OFF" && desiredState !== "HIGH") {
+        console.error("Invalid value for desired state");
+
+        return false;
+      }
+
+      console.log(deviceNumber, desiredState);
+
+      const blowerState = {
+        deviceNumber: deviceNumber.toString(),
+        desiredState: desiredState,
+        originatorId: "optional-Blower",
+      };
+
+      const req = await this.instance.post(
+        "https://iot.controlmyspa.com/mobile/control/" +
+          this.currentSpa._id +
+          "/setBlowerState",
+        blowerState,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent":
+              "ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2",
+            "Accept-Encoding": "br;q=1.0, gzip;q=0.9, deflate;q=0.8",
+            "Accept-Language": "cs-CZ;q=1.0",
+            "Content-Length": JSON.stringify(blowerState).length,
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + this.tokenData.access_token,
+          },
         }
       );
 
-      if (this.waitForResult) {
-        await this.sleep(5000);
-        const newSpaData = await this.getSpa();
+      const requestValid = req.status >= 200 && req.status < 400;
 
-        const newState = newSpaData.currentState.components.find((el, id) => {
-          return (
-            el.componentType === 'PUMP' && el.port === deviceNumber.toString()
-          );
-        });
+      if (requestValid) {
+        const oldState = this.currentSpa.currentState.components.find(
+          (el, id) => {
+            return (
+              el.componentType === "BLOWER" &&
+              el.port === deviceNumber.toString()
+            );
+          }
+        );
 
-        console.log(oldState.value + ' => ' + newState.value);
+        if (this.waitForResult) {
+          await this.sleep(5000);
+          const newSpaData = await this.getSpa();
 
-        return newSpaData;
+          const newState = newSpaData.currentState.components.find((el, id) => {
+            return (
+              el.componentType === "BLOWER" &&
+              el.port === deviceNumber.toString()
+            );
+          });
+
+          console.log(oldState.value + " => " + newState.value);
+
+          return newSpaData;
+        }
+
+        return true;
+      } else {
+        // error getting idm
+        console.error("failed to set blower state");
       }
-
-      return true;
-    } else {
-      // error getting idm
-      console.error('failed to set jet state');
-    }
-
-    return false;
-  }
-
-  async setBlowerState (deviceNumber, desiredState) {
-    // numbers 0,1,2  || states: HIGH , OFF
-    if (desiredState !== 'OFF' && desiredState !== 'HIGH') {
-      console.error('Invalid value for desired state');
 
       return false;
+    } catch (error) {
+      console.error(error);
     }
+  }
 
-    const blowerState = {
-      deviceNumber: deviceNumber.toString(),
-      desiredState: desiredState,
-      originatorId: 'optional-Blower'
-    };
-
-    const req = await axios.post(
-      'https://iot.controlmyspa.com/mobile/control/' +
-      this.currentSpa._id +
-      '/setBlowerState',
-      blowerState,
-      {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent':
-            'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-          'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-          'Accept-Language': 'cs-CZ;q=1.0',
-          'Content-Length': JSON.stringify(blowerState).length,
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + this.tokenData.access_token
-        }
+  async setLightState(deviceNumber, desiredState) {
+    try {
+      if (!this.isLoggedIn()) {
+        await this.login();
       }
-    );
 
-    if (req.status === 202) {
-      const oldState = this.currentSpa.currentState.components.find(
-        (el, id) => {
-          return (
-            el.componentType === 'BLOWER' && el.port === deviceNumber.toString()
-          );
+      // numbers 0,1,2  || states: HIGH , OFF
+      if (desiredState !== "OFF" && desiredState !== "HIGH") {
+        console.error("Invalid value for desired state");
+
+        return false;
+      }
+
+      const lightState = {
+        deviceNumber: deviceNumber.toString(),
+        desiredState: desiredState,
+        originatorId: "optional-Light",
+      };
+
+      const req = await this.instance.post(
+        "https://iot.controlmyspa.com/mobile/control/" +
+          this.currentSpa._id +
+          "/setLightState",
+        lightState,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent":
+              "ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2",
+            "Accept-Encoding": "br;q=1.0, gzip;q=0.9, deflate;q=0.8",
+            "Accept-Language": "cs-CZ;q=1.0",
+            "Content-Length": JSON.stringify(lightState).length,
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + this.tokenData.access_token,
+          },
         }
       );
 
-      if (this.waitForResult) {
-        await this.sleep(5000);
-        const newSpaData = await this.getSpa();
+      const requestValid = req.status >= 200 && req.status < 400;
 
-        const newState = newSpaData.currentState.components.find((el, id) => {
-          return (
-            el.componentType === 'BLOWER' && el.port === deviceNumber.toString()
-          );
-        });
+      if (requestValid) {
+        const oldState = this.currentSpa.currentState.components.find(
+          (el, id) => {
+            return (
+              el.componentType === "LIGHT" &&
+              el.port === deviceNumber.toString()
+            );
+          }
+        );
 
-        console.log(oldState.value + ' => ' + newState.value);
+        if (this.waitForResult) {
+          await this.sleep(5000);
+          const newSpaData = await this.getSpa();
 
-        return newSpaData;
+          const newState = newSpaData.currentState.components.find((el, id) => {
+            return (
+              el.componentType === "LIGHT" &&
+              el.port === deviceNumber.toString()
+            );
+          });
+
+          console.log(oldState.value + " => " + newState.value);
+
+          return newSpaData;
+        }
+
+        return true;
+      } else {
+        // error getting idm
+        console.error("failed to set light state");
       }
-
-      return true;
-    } else {
-      // error getting idm
-      console.error('failed to set blower state');
-    }
-
-    return false;
-  }
-
-  async setLightState (deviceNumber, desiredState) {
-    // numbers 0,1,2  || states: HIGH , OFF
-    if (desiredState !== 'OFF' && desiredState !== 'HIGH') {
-      console.error('Invalid value for desired state');
 
       return false;
+    } catch (error) {
+      console.error(error);
     }
+  }
 
-    const lightState = {
-      deviceNumber: deviceNumber.toString(),
-      desiredState: desiredState,
-      originatorId: 'optional-Light'
-    };
-
-    const req = await axios.post(
-      'https://iot.controlmyspa.com/mobile/control/' +
-      this.currentSpa._id +
-      '/setLightState',
-      lightState,
-      {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent':
-            'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-          'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-          'Accept-Language': 'cs-CZ;q=1.0',
-          'Content-Length': JSON.stringify(lightState).length,
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + this.tokenData.access_token
-        }
+  async toggleHeaterMode() {
+    try {
+      if (!this.isLoggedIn()) {
+        await this.login();
       }
-    );
 
-    if (req.status === 202) {
-      const oldState = this.currentSpa.currentState.components.find(
-        (el, id) => {
-          return (
-            el.componentType === 'LIGHT' && el.port === deviceNumber.toString()
-          );
+      const toggle = {
+        originatorId: "",
+      };
+
+      const req = await this.instance.post(
+        "https://iot.controlmyspa.com/mobile/control/" +
+          this.currentSpa._id +
+          "/toggleHeaterMode",
+        toggle,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent":
+              "ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2",
+            "Accept-Encoding": "br;q=1.0, gzip;q=0.9, deflate;q=0.8",
+            "Accept-Language": "cs-CZ;q=1.0",
+            "Content-Length": JSON.stringify(toggle).length,
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + this.tokenData.access_token,
+          },
         }
       );
 
-      if (this.waitForResult) {
-        await this.sleep(5000);
-        const newSpaData = await this.getSpa();
+      const requestValid = req.status >= 200 && req.status < 400;
 
-        const newState = newSpaData.currentState.components.find((el, id) => {
-          return (
-            el.componentType === 'LIGHT' && el.port === deviceNumber.toString()
-          );
-        });
+      if (requestValid) {
+        const oldState = this.currentSpa.currentState.heaterMode;
 
-        console.log(oldState.value + ' => ' + newState.value);
+        if (this.waitForResult) {
+          await this.sleep(5000);
+          const newSpaData = await this.getSpa();
 
-        return newSpaData;
-      }
+          const newState = newSpaData.currentState.heaterMode;
 
-      return true;
-    } else {
-      // error getting idm
-      console.error('failed to set light state');
-    }
+          console.log(oldState + " => " + newState);
 
-    return false;
-  }
-
-  async toggleHeaterMode () {
-    const toggle = {
-      originatorId: ''
-    };
-
-    const req = await axios.post(
-      'https://iot.controlmyspa.com/mobile/control/' +
-      this.currentSpa._id +
-      '/toggleHeaterMode',
-      toggle,
-      {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent':
-            'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-          'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-          'Accept-Language': 'cs-CZ;q=1.0',
-          'Content-Length': JSON.stringify(toggle).length,
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + this.tokenData.access_token
+          return newSpaData;
         }
-      }
-    );
 
-    if (req.status === 202) {
-      const oldState = this.currentSpa.currentState.heaterMode;
-
-      if (this.waitForResult) {
-        await this.sleep(5000);
-        const newSpaData = await this.getSpa();
-
-        const newState = newSpaData.currentState.heaterMode;
-
-        console.log(oldState + ' => ' + newState);
-
-        return newSpaData;
+        return true;
+      } else {
+        // error getting idm
+        console.error("failed to set light state");
       }
 
-      return true;
-    } else {
-      // error getting idm
-      console.error('failed to set light state');
+      return false;
+    } catch (error) {
+      console.error(error);
     }
-
-    return false;
   }
 
-  async setFilterCycleIntervalSchedule (
+  async setFilterCycleIntervalSchedule(
     scheduleNumber,
     filterInterval,
     startTime
   ) {
-    // scheduleNumber 0,1  || filterInterval: this.scheduleFilterIntervalEnum || time: 24 hour format eg 20:00
-    const schedule = {
-      deviceNumber: scheduleNumber.toString(), // 0 - first always enabled , 1 - can be disabled by setting interval number to 0
-      originatorId: 'optional-filtercycle',
-      intervalNumber: filterInterval,
-      time: startTime
-    };
-
-    const req = await axios.post(
-      'https://iot.controlmyspa.com/mobile/control/' +
-      this.currentSpa._id +
-      '/setFilterCycleIntervalsSchedule',
-      schedule,
-      {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent':
-            'ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2',
-          'Accept-Encoding': 'br;q=1.0, gzip;q=0.9, deflate;q=0.8',
-          'Accept-Language': 'en-US;q=1.0',
-          'Content-Length': JSON.stringify(schedule).length,
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + this.tokenData.access_token
-        }
+    try {
+      if (!this.isLoggedIn()) {
+        await this.login();
       }
-    );
 
-    if (req.status === 202) {
-      const oldState = this.currentSpa.currentState.components.find(
-        (el, id) => {
-          return (
-            el.componentType === 'FILTER' && el.port === scheduleNumber.toString()
-          );
+      // scheduleNumber 0,1  || filterInterval: this.scheduleFilterIntervalEnum || time: 24 hour format eg 20:00
+      const schedule = {
+        deviceNumber: scheduleNumber.toString(), // 0 - first always enabled , 1 - can be disabled by setting interval number to 0
+        originatorId: "optional-filtercycle",
+        intervalNumber: filterInterval,
+        time: startTime,
+      };
+
+      const req = await this.instance.post(
+        "https://iot.controlmyspa.com/mobile/control/" +
+          this.currentSpa._id +
+          "/setFilterCycleIntervalsSchedule",
+        schedule,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent":
+              "ControlMySpa/3.0.2 (com.controlmyspa.qa; build:1; iOS 14.2.0) Alamofire/5.2.2",
+            "Accept-Encoding": "br;q=1.0, gzip;q=0.9, deflate;q=0.8",
+            "Accept-Language": "en-US;q=1.0",
+            "Content-Length": JSON.stringify(schedule).length,
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + this.tokenData.access_token,
+          },
         }
       );
 
-      if (this.waitForResult) {
-        await this.sleep(5000);
-        const newSpaData = await this.getSpa();
+      const requestValid = req.status >= 200 && req.status < 400;
 
-        const newState = newSpaData.currentState.components.find((el, id) => {
-          return (
-            el.componentType === 'FILTER' && el.port === scheduleNumber.toString()
-          );
-        });
+      if (requestValid) {
+        const oldState = this.currentSpa.currentState.components.find(
+          (el, id) => {
+            return (
+              el.componentType === "FILTER" &&
+              el.port === scheduleNumber.toString()
+            );
+          }
+        );
 
-        console.log(oldState.value + ' => ' + newState.value);
+        if (this.waitForResult) {
+          await this.sleep(5000);
+          const newSpaData = await this.getSpa();
 
-        return newSpaData;
+          const newState = newSpaData.currentState.components.find((el, id) => {
+            return (
+              el.componentType === "FILTER" &&
+              el.port === scheduleNumber.toString()
+            );
+          });
+
+          console.log(oldState.value + " => " + newState.value);
+
+          return newSpaData;
+        }
+
+        return true;
+      } else {
+        // error getting idm
+        console.error("failed to set filter schedule");
       }
 
-      return true;
-    } else {
-      // error getting idm
-      console.error('failed to set filter schedule');
+      return false;
+    } catch (error) {
+      console.error(error);
     }
-
-    return false;
   }
 
-  createFilterScheduleIntervals () {
+  createFilterScheduleIntervals() {
     this.scheduleFilterIntervalEnum = Object.freeze({
       idisabled: 0,
       i15minutes: 1,
@@ -760,7 +880,7 @@ class ControlMySpa {
       i23hours15minutes: 93,
       i23hours30minutes: 94,
       i23hours45minutes: 95,
-      i24hours: 96
+      i24hours: 96,
     });
   }
 }
